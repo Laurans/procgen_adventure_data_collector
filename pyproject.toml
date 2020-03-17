@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "procgen_adventure_data_collector"
+name = "procgen_play"
 version = "0.1.0"
 description = ""
 authors = ["Anaelle Laurans <16943368+Laurans@users.noreply.github.com>"]
@@ -19,3 +19,6 @@ isort = "^4.3.21"
 [build-system]
 requires = ["poetry>=0.12"]
 build-backend = "poetry.masonry.api"
+
+[tool.poetry.scripts]
+procgen_play = 'procgen_play.interactive:main'

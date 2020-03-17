@@ -16,17 +16,26 @@ class Episode:
         self.level_seed = None
 
         observation = preprocess_img(observation)
-        self.data = {"observations": [observation], "actions": [], "rewards": []}
+        self.data = {
+            "observations": [observation],
+            "actions": [],
+            "rewards": [],
+            "cum_rewards": [0],
+        }
+
+        self.cum_rewards = 0
 
     def set_level_seed(self, level_seed):
         self.level_seed = level_seed
 
     def add(self, act, rew, next_obs, done):
+        self.cum_rewards += rew
         if not done:
             next_obs = preprocess_img(next_obs)
             self.data["observations"] += [next_obs]
         self.data["actions"] += [np.int8(act)]
-        self.data["rewards"] += [np.int8(rew)]
+        self.data["rewards"] += [np.float(rew)]
+        self.data["cum_rewards"] += [np.float(self.cum_rewards)]
 
     def export(self):
         return {k: np.array(t) for k, t in self.data.items()}
@@ -46,7 +55,7 @@ def preprocess_img(img):
 class Monitor(Wrapper):
     def __init__(self, env, env_name):
         super(Monitor, self).__init__(env)
-        self.hdf5_path = "data.hdf5"
+        self.hdf5_path = "procgen_play_interactions.hdf5"
         already_exist = os.path.exists(self.hdf5_path)
         self.hdf5_file = h5py.File(self.hdf5_path, mode="a")
         self.env_name = env_name
@@ -78,9 +87,9 @@ class Monitor(Wrapper):
         self.episode.add(action, reward, observation["rgb"], done)
 
         if done:
-            if info["level_complete"]:
+            if info["level_complete"] or self.episode.cum_rewards > 0:
                 self.episode.set_level_seed(info["level_seed"])
-                self.save_episode()
+                self.save_episode(info["level_complete"])
 
     def _after_reset(self, observation):
         self.episode = Episode(observation["rgb"])
@@ -88,7 +97,7 @@ class Monitor(Wrapper):
     def _before_close(self):
         self.hdf5_file.close()
 
-    def save_episode(self):
+    def save_episode(self, level_complete):
         group = self.hdf5_file.create_group(f"level_{self.iterator}")
 
         for key, value in self.episode.export().items():
@@ -102,6 +111,7 @@ class Monitor(Wrapper):
             )
         group.attrs["level_seed"] = self.episode.level_seed
         group.attrs["env_name"] = self.env_name
+        group.attrs["level_complete"] = level_complete
 
         self.hdf5_file.flush()
         self.iterator += 1
@@ -126,7 +136,7 @@ class ProcgenInteractiveRecorder(ProcgenInteractive):
         sys.stdout = original
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--game",
@@ -138,3 +148,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     venv = ProcgenInteractiveRecorder(vision="human", env_name=args.env_name,)
     venv.run()
+
+
+if __name__ == "__main__":
+    main()
