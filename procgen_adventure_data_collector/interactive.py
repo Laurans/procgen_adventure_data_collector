@@ -6,6 +6,9 @@ import h5py
 import numpy as np
 from gym import Wrapper
 from procgen.interactive import ProcgenEnv, ProcgenInteractive, Scalarize
+from procgen.env import ENV_NAMES
+
+import argparse
 
 
 class Episode:
@@ -44,9 +47,17 @@ class Monitor(Wrapper):
     def __init__(self, env, env_name):
         super(Monitor, self).__init__(env)
         self.hdf5_path = "data.hdf5"
+        already_exist = os.path.exists(self.hdf5_path)
         self.hdf5_file = h5py.File(self.hdf5_path, mode="a")
-        self.hdf5_file.attrs["env_name"] = env_name
-        self.iterator = 0
+        self.env_name = env_name
+
+        if already_exist:
+            self.iterator = sorted(
+                list(map(lambda x: int(x.split("_")[-1]), self.hdf5_file.keys()))
+            )[-1]
+            self.iterator += 1
+        else:
+            self.iterator = 0
 
     def step(self, action):
         observation, reward, done, info = super(Monitor, self).step(action)
@@ -90,6 +101,7 @@ class Monitor(Wrapper):
                 compression="gzip",
             )
         group.attrs["level_seed"] = self.episode.level_seed
+        group.attrs["env_name"] = self.env_name
 
         self.hdf5_file.flush()
         self.iterator += 1
@@ -98,13 +110,13 @@ class Monitor(Wrapper):
 class ProcgenInteractiveRecorder(ProcgenInteractive):
     def __init__(self, vision, **kwargs):
         self._vision = vision
-        venv = ProcgenEnv(num_envs=1, **kwargs)
+        venv = ProcgenEnv(num_envs=1, distribution_mode="hard", **kwargs)
         self.combos = list(venv.unwrapped.combos)
         self.last_keys = []
         env = Scalarize(venv)
         env = Monitor(env, kwargs["env_name"])
         super(ProcgenInteractive, self).__init__(
-            env=env, sync=False, tps=15, display_info=True
+            env=env, sync=False, tps=15, display_info=False
         )
 
     def _update(self, dt):
@@ -114,5 +126,15 @@ class ProcgenInteractiveRecorder(ProcgenInteractive):
         sys.stdout = original
 
 
-venv = ProcgenInteractiveRecorder(vision="human", env_name="coinrun")
-venv.run()
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--game",
+        default="coinrun",
+        dest="env_name",
+        choices=ENV_NAMES,
+        help="Define which game to play",
+    )
+    args = parser.parse_args()
+    venv = ProcgenInteractiveRecorder(vision="human", env_name=args.env_name,)
+    venv.run()
